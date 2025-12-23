@@ -8,7 +8,7 @@ sudo dnf update -y
 
 # install development tools
 echo "Installing development tools..."
-sudo dnf groupinstall -y "development-tools"
+sudo dnf group install -y development-tools
 sudo dnf install -y \
   openssl-devel \
   pkg-config \
@@ -41,7 +41,7 @@ sudo dnf install -y \
     wireplumber \
     kitty \
     neohtop \
-    firefox \
+    firefox
 
 echo "Enabling RPM Fusion..."
 sudo dnf install -y \
@@ -49,11 +49,14 @@ sudo dnf install -y \
   https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
 
 echo "Installing multimedia codecs..."
-sudo dnf install -y ffmpeg
-sudo dnf groupupdate -y multimedia --setop="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
+sudo dnf group install -y multimedia \
+  --setopt=install_weak_deps=False \
+  --exclude=PackageKit-gstreamer-plugin
 
 echo "Installing NVIDIA driver..."
 sudo dnf install -y akmod-nvidia xorg-x11-drv-nvidia-cuda
+sudo akmods --force
+sudo dracut --force
 
 echo "Installing Node.js LTS..."
 curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
