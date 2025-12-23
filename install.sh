@@ -8,7 +8,7 @@ sudo dnf update -y
 
 # install development tools
 echo "Installing development tools..."
-sudo dnf groupinstall -y "Development Tools"
+sudo dnf groupinstall -y "development-tools"
 sudo dnf install -y \
   openssl-devel \
   pkg-config \
