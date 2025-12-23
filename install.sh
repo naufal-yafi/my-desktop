@@ -40,7 +40,6 @@ sudo dnf install -y \
     pipewire-pulse \
     wireplumber \
     kitty \
-    neohtop \
     firefox
 
 echo "Enabling RPM Fusion..."
