@@ -24,6 +24,7 @@ sudo dnf install -y \
     gnome-control-center \
     gnome-session \
     gnome-settings-daemon \
+    gnome-system-monitor \
     nautilus \
     xorg-x11-server-Xorg \
     xorg-x11-xauth \
@@ -61,8 +62,17 @@ echo "Installing Node.js LTS..."
 curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
 sudo dnf install -y nodejs
 
-echo "Installing Rust..."
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y 
+echo "Install MS Edge..."
+sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+sudo tee /etc/yum.repos.d/microsoft-edge.repo << 'EOF'
+[microsoft-edge]
+name=Microsoft Edge
+baseurl=https://packages.microsoft.com/yumrepos/edge
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+EOF
+sudo dnf install microsoft-edge-stable
 
 # enable services
 echo "Enabling services..."
