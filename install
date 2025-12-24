@@ -250,8 +250,3 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-source "$HOME/.cargo/env"
-sudo reboot
-
-

@@ -8,4 +8,8 @@
 sh install --base-system --dev-tools --ms-edge --firefox --chrome
 ```
 
+```sh
+source "$HOME/.cargo/env" && sudo reboot
+```
+
 [Baca informasi lengkap: fitur yang tersedia.](https://www.yappii.my.id/blog/dev/)
