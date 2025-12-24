@@ -178,7 +178,7 @@ dev_tools() {
   run "Install DBeaver (database GUI)" \
     sudo dnf install -y dbeaver-ce
 
-  run "Install Visual Studio Code" \
+  run "Enable RPM Code" \
     sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc \
     && sudo tee /etc/yum.repos.d/vscode.repo << 'EOF'
 [code]
@@ -188,7 +188,9 @@ enabled=1
 gpgcheck=1
 gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 EOF
-  && sudo dnf install -y code
+
+  run "Install Visual Studio Code" \
+    sudo dnf install -y code
 
   run "Install Postman & Mockoon (API tools)" \
     sudo dnf install -y postman mockoon
