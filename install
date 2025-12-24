@@ -1,0 +1,257 @@
+#!/usr/bin/env sh
+
+set -o pipefail
+
+TIMESTAMP=$(date '+%d-%m-%Y_%H.%M')
+LOG_DIR="$(pwd)/log"
+LOG_FILE="$LOG_DIR/$TIMESTAMP.log"
+mkdir -p "$LOG_DIR"
+
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+RESET="\033[0m"
+
+log_info() {
+  echo -e "${BLUE}[INFO]${RESET} $1"
+  echo "[INFO] $1" >> "$LOG_FILE"
+}
+
+log_ok() {
+  echo -e "${GREEN}[ OK ]${RESET} $1"
+  echo "[ OK ] $1" >> "$LOG_FILE"
+}
+
+log_fail() {
+  echo -e "${RED}[FAIL]${RESET} $1"
+  echo "[FAIL] $1" >> "$LOG_FILE"
+}
+
+detect_fedora_variant() {
+  if [ ! -f /etc/os-release ]; then
+    log_fail "/etc/os-release not found (cannot detect OS)"
+    exit 1
+  fi
+
+  . /etc/os-release
+
+  FEDORA_VARIANT="${VARIANT_ID:-unknown}"
+  log_info "Detected Fedora variant: ${FEDORA_VARIANT}"
+}
+
+require_fedora_server() {
+  if [ "$FEDORA_VARIANT" != "server" ]; then
+    log_info "Skipping: this step is intended for Fedora Server only"
+    log_info "Current system is: ${FEDORA_VARIANT}"
+    log_fail "Aborting installation"
+    exit 1
+  fi
+}
+
+run() {
+  local msg="$1"
+  shift
+
+  log_info "$msg"
+
+  if "$@" 2>&1 | tee -a "$LOG_FILE"; then
+    log_ok "$msg"
+  else
+    log_fail "$msg"
+    SUMMARY_FAIL=$((SUMMARY_FAIL + 1))
+    exit 1
+  fi
+
+  SUMMARY_OK=$((SUMMARY_OK + 1))
+}
+
+base_system() {
+  run "System update (dnf update)" \
+    sudo dnf update -y
+
+  run "Enable RPM Fusion (free & nonfree)" \
+    sudo dnf install -y \
+      https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+      https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+
+  run "Install GNOME core components" \
+    sudo dnf install -y \
+      gnome-shell \
+      gdm \
+      gnome-session \
+      gnome-settings-daemon \
+      gnome-control-center
+
+  run "Install GNOME utilities & file manager" \
+    sudo dnf install -y \
+      nautilus \
+      gsettings-desktop-schemas
+
+  run "Install Xorg & graphics stack" \
+    sudo dnf install -y \
+      xorg-x11-server-Xorg \
+      xorg-x11-xauth \
+      xorg-x11-drivers \
+      mesa-dri-drivers \
+      mesa-libEGL \
+      mesa-libGL
+
+  run "Install system services (DBus, Polkit, Network)" \
+    sudo dnf install -y \
+      dbus \
+      polkit \
+      NetworkManager
+
+  run "Install Bluetooth & audio (PipeWire)" \
+    sudo dnf install -y \
+      bluez \
+      pipewire \
+      pipewire-pulse \
+      wireplumber
+
+  run "Install multimedia codecs (RPM Fusion)" \
+    sudo dnf group install -y multimedia \
+      --setopt=install_weak_deps=False \
+      --exclude=PackageKit-gstreamer-plugin
+
+  run "Install basic utilities (terminal & monitor)" \
+    sudo dnf install -y \
+      alacritty \
+      htop \
+      bleachbit \
+  
+  run "Enable GDM (GNOME Display Manager)" \
+    sudo systemctl enable gdm --force
+  
+  run "Enable NetworkManager & Bluetooth services" \
+    sudo systemctl enable --now NetworkManager bluetooth
+
+  run "Set default target to graphical (GUI on boot)" \
+    sudo systemctl set-default graphical.target
+}
+
+dev_tools() {
+  run "Add NodeSource repo (Node.js LTS)" \
+    curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+
+  run "Install Node.js LTS (npm included)" \
+    sudo dnf install -y nodejs
+
+  run "Install pnpm (global via npm)" \
+    sudo npm install -g pnpm
+
+  run "Install PHP & common extensions" \
+    sudo dnf install -y \
+      php \
+      php-cli \
+      php-common \
+      php-mbstring \
+      php-pdo \
+      php-mysqlnd \
+      php-xml \
+      php-curl \
+      php-zip
+  
+  run "Install Composer (PHP dependency manager)" \
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
+    && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
+    && rm -f composer-setup.php
+
+  run "Install Development Tools group (gcc, make, etc)" \
+    sudo dnf group install -y development-tools
+
+  run "Install low-level build dependencies" \
+    sudo dnf install -y \
+      openssl-devel \
+      pkg-config \
+      clang \
+      kernel-devel \
+      kernel-headers
+
+  run "Install Podman & Cockpit (container + web UI)" \
+    sudo dnf install -y podman cockpit cockpit-podman
+
+  run "Enable Cockpit Web UI (port 9090)" \
+    sudo systemctl enable --now cockpit.socket
+
+  run "Install DBeaver (database GUI)" \
+    sudo dnf install -y dbeaver-ce
+
+  run "Install Visual Studio Code" \
+    sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc \
+    && sudo tee /etc/yum.repos.d/vscode.repo << 'EOF'
+[code]
+name=Visual Studio Code
+baseurl=https://packages.microsoft.com/yumrepos/vscode
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+EOF
+  && sudo dnf install -y code
+
+  run "Install Postman & Mockoon (API tools)" \
+    sudo dnf install -y postman mockoon
+}
+
+ms_edge() {
+  run "Enable RPM Microsoft Edge" \
+    sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+  
+  run "Install Microsoft Edge" \
+    sudo tee /etc/yum.repos.d/microsoft-edge.repo << 'EOF'
+[microsoft-edge]
+name=Microsoft Edge
+baseurl=https://packages.microsoft.com/yumrepos/edge
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+EOF
+
+  run "Installing Microsoft Edge" \
+    sudo dnf install microsoft-edge-stable
+}
+
+firefox() {
+  run "Installing Firefox" \
+    sudo dnf install firefox
+}
+
+chrome() {
+  run "Installing Chrome" \
+    sudo dnf install -y https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
+}
+
+sudo su
+
+detect_fedora_variant
+require_fedora_server
+
+for arg in "$@"; do
+  case "$arg" in 
+    --base-system)
+      base_system
+      ;;
+    --dev-tools)
+      dev_tools
+      ;;
+    --ms-edge)
+      ms_edge
+      ;;
+    --firefox)
+      firefox
+      ;;
+    --chrome)
+      chrome
+      ;;
+    *)
+      echo: "Unknown option: $arg"
+      exit 1
+      ;;
+  esac
+done
+
+source "$HOME/.cargo/env"
+sudo reboot
+
+
