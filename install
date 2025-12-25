@@ -40,7 +40,7 @@ detect_fedora_variant() {
   . /etc/os-release
 
   FEDORA_VARIANT="${VARIANT_ID:-unknown}"
-  log_info "Detected Fedora variant: ${FEDORA_VARIANT}"
+  log_ok "Detected Fedora variant: ${FEDORA_VARIANT}"
 }
 
 require_fedora_server() {
