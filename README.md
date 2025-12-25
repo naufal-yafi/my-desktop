@@ -12,10 +12,18 @@ sh install --base-system --dev-tools --ms-edge --firefox --chrome
 sudo reboot
 ```
 
-## Show Error Log
+## Show All File Error Log
 
 ```sh
-grep -n '\[FAIL\]' log/*.log
+sh install --log
 ```
+
+## Show Specific File Error Log
+
+```sh
+sh install --log={timestamp}.log
+```
+
+Example: `sh install --log=log/25-12-2025_08.47.log`
 
 [Baca informasi lengkap: fitur yang tersedia.](https://www.yappii.my.id/blog/dev/)

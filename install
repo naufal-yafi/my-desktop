@@ -329,6 +329,7 @@ chrome() {
 detect_fedora_variant
 require_fedora_server
 
+LOG_PATH=""
 for arg in "$@"; do
   case "$arg" in 
     --base-system)
@@ -346,12 +347,23 @@ for arg in "$@"; do
     --chrome)
       chrome
       ;;
+    --log)
+      LOG_PATH="log/*.log"
+      ;;
+    --log=*)
+      LOG_PATH="${arg#--log=}"
+      ;;
     *)
-      echo: "Unknown option: $arg"
+      log_fail: "Unknown option: $arg"
       exit 1
       ;;
   esac
 done
+
+if [ -n "$LOG_PATH" ]; then
+  log_info "Searching FAIL logs in: $LOG_PATH"
+  grep -n '\[FAIL\]' $LOG_PATH || log_fail "[INFO] No FAIL found"
+fi
 
 echo ""
 echo "================ INSTALL SUMMARY ================"
