@@ -6,6 +6,9 @@ TIMESTAMP=$(date '+%d-%m-%Y_%H.%M')
 LOG_DIR="$(pwd)/log"
 LOG_FILE="$LOG_DIR/$TIMESTAMP.log"
 mkdir -p "$LOG_DIR"
+SUMMARY_OK=0
+SUMMARY_FAIL=0
+FAILED_STEPS=""
 
 RED="\033[31m"
 GREEN="\033[32m"
@@ -14,7 +17,7 @@ BLUE="\033[34m"
 RESET="\033[0m"
 
 log_info() {
-  echo -e "${BLUE}[INFO]${RESET} $1"
+  echo -e "${YELLOW}[INFO]${RESET} $1"
   echo "[INFO] $1" >> "$LOG_FILE"
 }
 
@@ -60,22 +63,102 @@ run() {
   else
     log_fail "$msg"
     SUMMARY_FAIL=$((SUMMARY_FAIL + 1))
-    exit 1
+    FAILED_STEPS="${FAILED_STEPS}\n- $msg"
+    return 1
   fi
 
   SUMMARY_OK=$((SUMMARY_OK + 1))
 }
 
+install_packages() {
+  local msg="$1"
+  shift
+  local pkgs=()
+
+  for pkg in "$@"; do
+    if is_installed "$pkg"; then
+      log_info "SKIP ===> Package already installed: $pkg"
+    else
+      pkgs+=("$pkg")
+    fi
+  done
+
+  if [ "${#pkgs[@]}" -eq 0 ]; then
+    log_ok "$msg (all packages already installed)"
+    return 0
+  fi
+
+  run "$msg" sudo dnf install -y "${pkgs[@]}"
+}
+
+is_group_installed() {
+  dnf group list --installed | grep -qi "$1"
+}
+
+is_service_enabled() {
+  systemctl is-enabled "$1" >/dev/null 2>&1
+}
+
+is_service_active() {
+  systemctl is-active "$1" >/dev/null 2>&1
+}
+
+is_repo_installed() {
+  rpm -q "$1" >/dev/null 2>&1
+}
+
+rpm_fusion() {
+  RPMF_FREE="rpmfusion-free-release"
+  RPMF_NONFREE="rpmfusion-nonfree-release"
+
+  if is_repo_installed "$RPMF_FREE" && is_repo_installed "$RPMF_NONFREE"; then
+    log_info "SKIP ===> RPM Fusion (free & nonfree) already enabled"
+  else
+    run "Enable RPM Fusion (free & nonfree)" \
+      sudo dnf install -y \
+        https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+        https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+  fi
+}
+
+manager_bluetooth_network() {
+  SERVICES="NetworkManager bluetooth"
+  NEED_ENABLE=()
+
+  for svc in $SERVICES; do
+    if is_service_enabled "$svc" && is_service_active "$svc"; then
+      log_info "SKIP ===> $svc already enabled & active"
+    else
+      NEED_ENABLE="$NEED_ENABLE $svc"
+    fi
+  done
+
+  if [ -n "$NEED_ENABLE" ]; then
+    run "Enable NetworkManager & Bluetooth services" \
+      sudo systemctl enable --now $NEED_ENABLE
+  else
+    log_ok "NetworkManager & Bluetooth already enabled & active"
+  fi
+}
+
+gui_boot() {
+  CURRENT_TARGET=$(systemctl get-default)
+
+  if [ "$CURRENT_TARGET" = "graphical.target" ]; then
+    log_info "SKIP ===> Default target already graphical"
+  else
+    run "Set default target to graphical (GUI on boot)" \
+      sudo systemctl set-default graphical.target
+  fi
+}
+
 base_system() {
-  run "System update (dnf update)" \
+  install_packages "System update (dnf update)" \
     sudo dnf update -y
 
-  run "Enable RPM Fusion (free & nonfree)" \
-    sudo dnf install -y \
-      https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
-      https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+  rpm_fusion
 
-  run "Install GNOME core components" \
+  install_packages "Install GNOME core components" \
     sudo dnf install -y \
       gnome-shell \
       gdm \
@@ -83,12 +166,12 @@ base_system() {
       gnome-settings-daemon \
       gnome-control-center
 
-  run "Install GNOME utilities & file manager" \
+  install_packages "Install GNOME utilities & file manager" \
     sudo dnf install -y \
       nautilus \
       gsettings-desktop-schemas
 
-  run "Install Xorg & graphics stack" \
+  install_packages "Install Xorg & graphics stack" \
     sudo dnf install -y \
       xorg-x11-server-Xorg \
       xorg-x11-xauth \
@@ -97,51 +180,56 @@ base_system() {
       mesa-libEGL \
       mesa-libGL
 
-  run "Install system services (DBus, Polkit, Network)" \
+  install_packages "Install system services (DBus, Polkit, Network)" \
     sudo dnf install -y \
       dbus \
       polkit \
       NetworkManager
 
-  run "Install Bluetooth & audio (PipeWire)" \
+  install_packages "Install Bluetooth & audio (PipeWire)" \
     sudo dnf install -y \
       bluez \
       pipewire \
       pipewire-pulse \
       wireplumber
 
-  run "Install multimedia codecs (RPM Fusion)" \
-    sudo dnf group install -y multimedia \
-      --setopt=install_weak_deps=False \
-      --exclude=PackageKit-gstreamer-plugin
+  if is_group_installed "multimedia"; then
+    log_info "SKIP ===> Group multimedia already installed (skip)"
+  else
+    run "Install multimedia codecs (RPM Fusion)" \
+      sudo dnf group install -y multimedia \
+        --setopt=install_weak_deps=False \
+        --exclude=PackageKit-gstreamer-plugin
+  fi
 
-  run "Install basic utilities (terminal & monitor)" \
+  install_packages "Install basic utilities (terminal & monitor)" \
     sudo dnf install -y \
       alacritty \
       htop \
       bleachbit \
   
-  run "Enable GDM (GNOME Display Manager)" \
-    sudo systemctl enable gdm --force
+  if is_service_enabled gdm; then
+    log_info "SKIP ===> GDM already enabled"
+  else
+    run "Enable GDM (GNOME Display Manager)" \
+      sudo systemctl enable gdm --force
+  fi
   
-  run "Enable NetworkManager & Bluetooth services" \
-    sudo systemctl enable --now NetworkManager bluetooth
-
-  run "Set default target to graphical (GUI on boot)" \
-    sudo systemctl set-default graphical.target
+  gui_boot
+  manager_bluetooth_network
 }
 
 dev_tools() {
   run "Add NodeSource repo (Node.js LTS)" \
     curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
 
-  run "Install Node.js LTS (npm included)" \
+  install_packages "Install Node.js LTS (npm included)" \
     sudo dnf install -y nodejs
 
-  run "Install pnpm (global via npm)" \
+  install_packages "Install pnpm (global via npm)" \
     sudo npm install -g pnpm
 
-  run "Install PHP & common extensions" \
+  install_packages "Install PHP & common extensions" \
     sudo dnf install -y \
       php \
       php-cli \
@@ -158,10 +246,14 @@ dev_tools() {
     && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
     && rm -f composer-setup.php
 
-  run "Install Development Tools group (gcc, make, etc)" \
-    sudo dnf group install -y development-tools
+  if is_group_installed "development-tools"; then
+    log_info "SKIP ===> Development tools already installed"
+  else
+    run "Install Development Tools group (gcc, make, etc)" \
+      sudo dnf group install -y development-tools
+  fi
 
-  run "Install low-level build dependencies" \
+  install_packages "Install low-level build dependencies" \
     sudo dnf install -y \
       openssl-devel \
       pkg-config \
@@ -169,14 +261,20 @@ dev_tools() {
       kernel-devel \
       kernel-headers
 
-  run "Install Podman & Cockpit (container + web UI)" \
+  install_packages "Install Podman & Cockpit (container + web UI)" \
     sudo dnf install -y podman cockpit cockpit-podman
 
-  run "Enable Cockpit Web UI (port 9090)" \
-    sudo systemctl enable --now cockpit.socket
+  if is_service_enabled cockpit.socket; then
+    log_info "SKIP ===> Cockpit already enabled"
+  else
+    run "Enable Cockpit Web UI (port 9090)" \
+      sudo systemctl enable --now cockpit.socket
+  fi
 
-  run "Install DBeaver (database GUI)" \
-    sudo dnf install -y dbeaver-ce
+  run "Install DBeaver (RPM direct)" \
+    curl -L -o /tmp/dbeaver.rpm https://dbeaver.io/files/dbeaver-ce-latest.x86_64.rpm \
+    && sudo dnf install -y /tmp/dbeaver.rpm \
+    && rm -f /tmp/dbeaver.rpm
 
   run "Enable RPM Code" \
     sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc \
@@ -189,10 +287,10 @@ gpgcheck=1
 gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 EOF
 
-  run "Install Visual Studio Code" \
+  install_packages "Install Visual Studio Code" \
     sudo dnf install -y code
 
-  run "Install Postman & Mockoon (API tools)" \
+  install_packages "Install Postman & Mockoon (API tools)" \
     sudo dnf install -y postman mockoon
 }
 
@@ -210,17 +308,17 @@ gpgcheck=1
 gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 EOF
 
-  run "Installing Microsoft Edge" \
+  install_packages "Installing Microsoft Edge" \
     sudo dnf install microsoft-edge-stable
 }
 
 firefox() {
-  run "Installing Firefox" \
+  install_packages "Installing Firefox" \
     sudo dnf install firefox
 }
 
 chrome() {
-  run "Installing Chrome" \
+  install_packages "Installing Chrome" \
     sudo dnf install -y https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
 }
 
@@ -250,3 +348,16 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+echo ""
+echo "================ INSTALL SUMMARY ================"
+echo "OK     : $SUMMARY_OK"
+echo "FAILED : $SUMMARY_FAIL"
+
+if [ "$SUMMARY_FAIL" -ne 0 ]; then
+  echo -e "${YELLOW}Failed steps:${RESET}"
+  echo -e "$FAILED_STEPS"
+  echo -e "${YELLOW}Check log file:${RESET} $LOG_FILE"
+else
+  echo -e "${GREEN}All steps completed successfully 🎉${RESET}"
+fi
