@@ -354,26 +354,28 @@ for arg in "$@"; do
       LOG_PATH="${arg#--log=}"
       ;;
     *)
-      log_fail: "Unknown option: $arg"
+      log_fail "Unknown option: $arg"
       exit 1
       ;;
   esac
 done
 
 if [ -n "$LOG_PATH" ]; then
-  log_info "Searching FAIL logs in: $LOG_PATH"
-  grep -n '\[FAIL\]' $LOG_PATH || log_fail "[INFO] No FAIL found"
+  log_info "Searching logs in: $LOG_PATH"
+  grep -n '\[FAIL\]' $LOG_PATH || log_fail "[INFO] Log not found"
 fi
 
-echo ""
-echo "================ INSTALL SUMMARY ================"
-echo "OK     : $SUMMARY_OK"
-echo "FAILED : $SUMMARY_FAIL"
+if [ "$SUMMARY_OK" -ne 0 ] || [ "$SUMMARY_FAIL" -ne 0 ]; then
+  echo ""
+  echo "================ INSTALL SUMMARY ================"
+  echo "OK     : $SUMMARY_OK"
+  echo "FAILED : $SUMMARY_FAIL"
 
-if [ "$SUMMARY_FAIL" -ne 0 ]; then
-  echo -e "${YELLOW}Failed steps:${RESET}"
-  echo -e "$FAILED_STEPS"
-  echo -e "${YELLOW}Check log file:${RESET} $LOG_FILE"
-else
-  echo -e "${GREEN}All steps completed successfully 🎉${RESET}"
+  if [ "$SUMMARY_FAIL" -ne 0 ]; then
+    echo -e "${YELLOW}Failed steps:${RESET}"
+    echo -e "$FAILED_STEPS"
+    echo -e "${YELLOW}Check log file:${RESET} $LOG_FILE"
+  else
+    echo -e "${GREEN}All steps completed successfully 🎉${RESET}"
+  fi
 fi
